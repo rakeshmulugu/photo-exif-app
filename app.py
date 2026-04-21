@@ -45,16 +45,10 @@ st.markdown(
 # Config
 # ------------------------------------------------------------
 FONT_CANDIDATES = {
-    "Thin": [
-        "fonts/DejaVuSansCondensed.ttf",
-        "fonts/DejaVuSans.ttf",
-    ],
-    "Regular": [
-        "fonts/DejaVuSans.ttf",
-    ],
-    "Medium": [
-        "fonts/DejaVuSans.ttf",
-    ],
+    "Rail Thin": "fonts/RobotoCondensed-Light.ttf",
+    "Rail Regular": "fonts/RobotoCondensed-Regular.ttf",
+    "Title Thin": "fonts/Rajdhani-Light.ttf",
+    "Title Regular": "fonts/DejaVuSans.ttf",
 }
 
 FIELD_LABELS = {
