@@ -7,7 +7,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
 
-st.set_page_config(page_title="Exif Studio — Photo Metadata Overlay", layout="wide")
+st.set_page_config(page_title="Exif Studio : v1.2 — Photo Metadata Overlay", layout="wide")
 
 st.markdown(
     """
@@ -585,7 +585,7 @@ def render_top_text(
 # ------------------------------------------------------------
 # UI
 # ------------------------------------------------------------
-st.title("LensRail")
+st.title("ExIF S T U D I O --> v1.2")
 st.caption("Two looks only: Leica Rail and Sony Royal.")
 
 uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"])
