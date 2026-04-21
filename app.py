@@ -7,7 +7,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
 
-st.set_page_config(page_title="α Master Curator v1.2", layout="wide")
+st.set_page_config(page_title="Photo Metadata Overlay v1", layout="wide")
 
 st.markdown(
     """
@@ -46,17 +46,14 @@ st.markdown(
 # ------------------------------------------------------------
 FONT_CANDIDATES = {
     "Thin": [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "C:/Windows/Fonts/arial.ttf",
+        "fonts/DejaVuSansCondensed.ttf",
+        "fonts/DejaVuSans.ttf",
     ],
     "Regular": [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "C:/Windows/Fonts/arial.ttf",
+        "fonts/DejaVuSans.ttf",
     ],
     "Medium": [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "C:/Windows/Fonts/arial.ttf",
+        "fonts/DejaVuSans.ttf",
     ],
 }
 
@@ -79,7 +76,7 @@ PRESETS = {
         "font_weight": "Thin",
         "location_tracking": 1,
         "exif_tracking": 0,
-        "exif_size": 0.014,
+        "exif_size": 0.018,
         "location_size": 42,
         "subtitle_size": 22,
         "metadata_text_color": "#B0B0B0",
@@ -87,7 +84,7 @@ PRESETS = {
         "location_text_color": "#F7F7F7",
         "subtitle_text_color": "#D8D8D8",
         "location_opacity": 0.88,
-        "bar_or_rail_weight": 0.045,
+        "bar_or_rail_weight": 0.060,
         "safe_ratio": 0.90,
         "top_margin": 0.030,
         "title_gap": 12,
@@ -101,7 +98,7 @@ PRESETS = {
         "font_weight": "Thin",
         "location_tracking": 2,
         "exif_tracking": 0,
-        "exif_size": 0.018,
+        "exif_size": 0.020,
         "location_size": 34,
         "subtitle_size": 18,
         "metadata_text_color": "#9A9A9A",
@@ -123,7 +120,7 @@ PRESETS = {
         "font_weight": "Thin",
         "location_tracking": 2,
         "exif_tracking": 0,
-        "exif_size": 0.017,
+        "exif_size": 0.019,
         "location_size": 38,
         "subtitle_size": 20,
         "metadata_text_color": "#B5B5B5",
@@ -131,7 +128,7 @@ PRESETS = {
         "location_text_color": "#FFFFFF",
         "subtitle_text_color": "#E0E0E0",
         "location_opacity": 0.86,
-        "bar_or_rail_weight": 0.050,
+        "bar_or_rail_weight": 0.065,
         "safe_ratio": 0.90,
         "top_margin": 0.028,
         "title_gap": 12,
@@ -257,9 +254,8 @@ def sanitize_filename_part(text: str) -> str:
 
 def build_export_filename(original_name: str, suffix: str = "exif-curated") -> str:
     base = os.path.splitext(original_name)[0]
-    ext = ".jpg"
     suffix = sanitize_filename_part(suffix) or "exif-curated"
-    return f"{base}_{suffix}{ext}"
+    return f"{base}_{suffix}.jpg"
 
 
 # ------------------------------------------------------------
@@ -317,6 +313,28 @@ def get_exif_precision(img):
 
 
 # ------------------------------------------------------------
+# Session state
+# ------------------------------------------------------------
+def init_field_state(parsed_meta: dict):
+    for key in FIELD_LABELS.keys():
+        state_key = f"field_{key}"
+        if state_key not in st.session_state:
+            st.session_state[state_key] = safe_text(parsed_meta.get(key, ""))
+
+
+def init_text_state():
+    defaults = {
+        "top_location": "",
+        "custom_subtitle": "",
+        "show_gps_subtitle": False,
+        "export_suffix": "exif-curated",
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+# ------------------------------------------------------------
 # Text building
 # ------------------------------------------------------------
 def make_field_value(key, values):
@@ -353,7 +371,7 @@ def build_exif_text(selected_fields, values):
 # ------------------------------------------------------------
 # Fit text
 # ------------------------------------------------------------
-def fit_text(draw, text, max_width, start_size, weight="Regular", min_size=6):
+def fit_text(draw, text, max_width, start_size, weight="Regular", min_size=8):
     size = start_size
     while size >= min_size:
         font = get_font(size, weight)
@@ -376,7 +394,7 @@ def render_bottom_bar(img, text, tracking, font_scale, bar_weight, text_color, b
     draw = ImageDraw.Draw(canvas)
 
     final_text = apply_tracking(text, tracking)
-    start_font_size = max(8, int(h * font_scale))
+    start_font_size = max(10, int(h * font_scale))
     safe_width = int(w * safe_ratio)
     font, bbox = fit_text(draw, final_text, safe_width, start_font_size, weight=weight)
 
@@ -395,7 +413,7 @@ def render_top_bar(img, text, tracking, font_scale, bar_weight, text_color, bar_
     draw = ImageDraw.Draw(canvas)
 
     final_text = apply_tracking(text, tracking)
-    start_font_size = max(8, int(h * font_scale))
+    start_font_size = max(10, int(h * font_scale))
     safe_width = int(w * safe_ratio)
     font, bbox = fit_text(draw, final_text, safe_width, start_font_size, weight=weight)
 
@@ -410,12 +428,20 @@ def render_top_bar(img, text, tracking, font_scale, bar_weight, text_color, bar_
 def render_left_rail(img, text, tracking, font_scale, rail_weight, text_color, rail_color, safe_ratio, weight):
     img = img.convert("RGB")
     w, h = img.size
-    rail_w = int(w * rail_weight)
+
+    aspect_ratio = h / max(w, 1)
+    adaptive_rail_weight = rail_weight
+    if aspect_ratio > 1.2:
+        adaptive_rail_weight = max(rail_weight, 0.07)
+    if aspect_ratio > 1.6:
+        adaptive_rail_weight = max(adaptive_rail_weight, 0.085)
+
+    rail_w = int(w * adaptive_rail_weight)
     canvas = ImageOps.expand(img, border=(rail_w, 0, 0, 0), fill=rail_color)
 
     final_text = apply_tracking(text, tracking)
 
-    font_size = max(8, int(h * font_scale * 0.85))
+    font_size = max(12, int(h * font_scale * 1.45))
     font = get_font(font_size, weight)
 
     text_img = Image.new("RGBA", (h, rail_w), (0, 0, 0, 0))
@@ -423,7 +449,7 @@ def render_left_rail(img, text, tracking, font_scale, rail_weight, text_color, r
     bbox = td.textbbox((0, 0), final_text, font=font)
     tw = bbox[2] - bbox[0]
 
-    while tw > int(h * safe_ratio) and font_size > 6:
+    while tw > int(h * safe_ratio) and font_size > 8:
         font_size -= 1
         font = get_font(font_size, weight)
         bbox = td.textbbox((0, 0), final_text, font=font)
@@ -569,14 +595,16 @@ def render_top_text(
 # UI
 # ------------------------------------------------------------
 st.title("α MASTER CURATOR v1.2")
-st.caption("One upload, EXIF integrity check, live manual fallback, premium top text positioning, and cleaner export naming.")
+st.caption("One upload, EXIF integrity check, live manual fallback, and reliable export rendering.")
 
 uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"])
 
 if uploaded_file:
-    parsed_meta, exif_status, raw_tags = get_exif_precision(ImageOps.exif_transpose(Image.open(uploaded_file)).convert("RGB"))
-    uploaded_file.seek(0)
     img = ImageOps.exif_transpose(Image.open(uploaded_file)).convert("RGB")
+    parsed_meta, exif_status, raw_tags = get_exif_precision(img)
+
+    init_field_state(parsed_meta)
+    init_text_state()
 
     with st.sidebar:
         st.header("1. Preset")
@@ -584,8 +612,8 @@ if uploaded_file:
         preset = PRESETS[preset_name]
 
         st.header("2. Export")
-        export_suffix = st.text_input("Export suffix", value="exif-curated")
-        export_filename = build_export_filename(uploaded_file.name, export_suffix)
+        st.text_input("Export suffix", key="export_suffix")
+        export_filename = build_export_filename(uploaded_file.name, st.session_state["export_suffix"])
 
         st.header("3. Metadata Layout")
         layout = st.selectbox(
@@ -596,27 +624,26 @@ if uploaded_file:
         exif_fields = st.multiselect(
             "Fields to show",
             options=list(FIELD_LABELS.keys()),
-            default=[k for k in DEFAULT_FIELDS if safe_text(parsed_meta.get(k, ""))],
+            default=DEFAULT_FIELDS,
             format_func=lambda x: FIELD_LABELS[x],
         )
 
         st.header("4. Metadata Values")
-        st.caption("These always drive the live preview.")
-        s_model = st.text_input("Camera", value=safe_text(parsed_meta.get("model", "")))
-        s_lens = st.text_input("Lens", value=safe_text(parsed_meta.get("lens", "")))
-        s_focal = st.text_input("Focal", value=safe_text(parsed_meta.get("focal", "")))
-        s_fstop = st.text_input("Aperture", value=safe_text(parsed_meta.get("fstop", "")))
-        s_shutter = st.text_input("Shutter", value=safe_text(parsed_meta.get("shutter", "")))
-        s_iso = st.text_input("ISO", value=safe_text(parsed_meta.get("iso", "")))
-        s_datetime = st.text_input("Date Time", value=safe_text(parsed_meta.get("datetime", "")))
-        s_gps = st.text_input("Latitude / Longitude", value=safe_text(parsed_meta.get("gps", "")))
+        st.caption("Manual values always work, even when EXIF is missing.")
+        st.text_input("Camera", key="field_model")
+        st.text_input("Lens", key="field_lens")
+        st.text_input("Focal", key="field_focal")
+        st.text_input("Aperture", key="field_fstop")
+        st.text_input("Shutter", key="field_shutter")
+        st.text_input("ISO", key="field_iso")
+        st.text_input("Date Time", key="field_datetime")
+        st.text_input("Latitude / Longitude", key="field_gps")
 
         st.header("5. Top Text")
-        top_location = st.text_input("Title", value="")
+        st.text_input("Title", key="top_location")
         top_text_position = st.selectbox("Title position", ["Top Center", "Top Left", "Top Right"], index=0)
-        show_gps_subtitle = st.toggle("Use GPS as subtitle", value=False)
-        custom_subtitle = st.text_input("Or custom subtitle", value="")
-        final_subtitle = safe_text(custom_subtitle) if safe_text(custom_subtitle) else (safe_text(s_gps) if show_gps_subtitle else "")
+        st.toggle("Use GPS as subtitle", key="show_gps_subtitle")
+        st.text_input("Or custom subtitle", key="custom_subtitle")
 
         st.header("6. Typography")
         font_weight = st.selectbox(
@@ -650,15 +677,21 @@ if uploaded_file:
         top_margin = st.slider("Top margin", 0.01, 0.08, preset["top_margin"], 0.005)
 
     values = {
-        "model": safe_text(s_model),
-        "lens": safe_text(s_lens),
-        "focal": safe_text(s_focal),
-        "fstop": safe_text(s_fstop),
-        "shutter": safe_text(s_shutter),
-        "iso": safe_text(s_iso),
-        "datetime": safe_text(s_datetime),
-        "gps": safe_text(s_gps),
+        "model": safe_text(st.session_state.get("field_model", "")),
+        "lens": safe_text(st.session_state.get("field_lens", "")),
+        "focal": safe_text(st.session_state.get("field_focal", "")),
+        "fstop": safe_text(st.session_state.get("field_fstop", "")),
+        "shutter": safe_text(st.session_state.get("field_shutter", "")),
+        "iso": safe_text(st.session_state.get("field_iso", "")),
+        "datetime": safe_text(st.session_state.get("field_datetime", "")),
+        "gps": safe_text(st.session_state.get("field_gps", "")),
     }
+
+    final_subtitle = (
+        safe_text(st.session_state.get("custom_subtitle", ""))
+        if safe_text(st.session_state.get("custom_subtitle", ""))
+        else (values["gps"] if st.session_state.get("show_gps_subtitle", False) else "")
+    )
 
     exif_text = build_exif_text(exif_fields, values)
 
@@ -683,7 +716,7 @@ if uploaded_file:
 
     output = render_top_text(
         output,
-        top_location,
+        st.session_state.get("top_location", ""),
         final_subtitle,
         location_size,
         subtitle_size,
@@ -712,8 +745,12 @@ if uploaded_file:
         elif exif_status == "PARTIAL":
             st.markdown('<div class="info-box"><b>EXIF Integrity</b><br>PARTIAL — some metadata exists, but part may be stripped.</div>', unsafe_allow_html=True)
         else:
-            st.markdown('<div class="info-box"><b>EXIF Integrity</b><br>STRIPPED — very little usable metadata was found. Manual values are recommended.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="info-box"><b>EXIF Integrity</b><br>STRIPPED — very little usable metadata was found.</div>', unsafe_allow_html=True)
 
+        st.markdown(
+            f'<div class="info-box"><b>Font source</b><br>{" / ".join(FONT_CANDIDATES[font_weight])}</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             f'<div class="info-box"><b>Export file</b><br>{export_filename}</div>',
             unsafe_allow_html=True,
@@ -723,7 +760,7 @@ if uploaded_file:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f'<div class="info-box"><b>Top title</b><br>{safe_text(top_location) if safe_text(top_location) else "Not set"}</div>',
+            f'<div class="info-box"><b>Top title</b><br>{safe_text(st.session_state.get("top_location", "")) or "Not set"}</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -749,4 +786,4 @@ if uploaded_file:
     )
 
 else:
-    st.info("Upload one image to start. This version adds better export naming, flexible top text positioning, and cleaner grouped controls.")
+    st.info("Upload one image. If EXIF is missing, type values manually in the sidebar and they will be used in preview and download.")
