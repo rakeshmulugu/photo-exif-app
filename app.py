@@ -7,7 +7,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
 
-st.set_page_config(page_title="Photo Metadata Overlay v1", layout="wide")
+st.set_page_config(page_title="LensRail — Photo Metadata Overlay", layout="wide")
 
 st.markdown(
     """
@@ -42,14 +42,22 @@ st.markdown(
 )
 
 # ------------------------------------------------------------
-# Config
+# Fonts
+# Put these files in repo:
+# fonts/DejaVuSans.ttf
+# fonts/DejaVuSansCondensed.ttf
+# fonts/Rajdhani-Light.ttf
+# fonts/RobotoCondensed-Light.ttf
+# fonts/RobotoCondensed-Regular.ttf
 # ------------------------------------------------------------
-FONT_CANDIDATES = {
+FONT_FILES = {
     "Rail Thin": "fonts/RobotoCondensed-Light.ttf",
     "Rail Regular": "fonts/RobotoCondensed-Regular.ttf",
     "Title Thin": "fonts/Rajdhani-Light.ttf",
     "Title Regular": "fonts/DejaVuSans.ttf",
 }
+
+FALLBACK_FONT = "fonts/DejaVuSans.ttf"
 
 FIELD_LABELS = {
     "model": "Camera",
@@ -65,12 +73,16 @@ FIELD_LABELS = {
 DEFAULT_FIELDS = ["model", "focal", "fstop", "iso"]
 
 PRESETS = {
-    "Leica Minimal": {
+    "Leica Rail": {
         "layout": "Left Rail",
-        "font_weight": "Thin",
+        "rail_font": "Rail Thin",
+        "title_font": "Title Thin",
         "location_tracking": 1,
         "exif_tracking": 0,
-        "exif_size": 0.016,
+        "rail_text_scale": 0.95,
+        "rail_width_ratio": 0.028,
+        "bar_text_scale": 0.018,
+        "bar_height_ratio": 0.045,
         "location_size": 42,
         "subtitle_size": 22,
         "metadata_text_color": "#B0B0B0",
@@ -78,21 +90,24 @@ PRESETS = {
         "location_text_color": "#F7F7F7",
         "subtitle_text_color": "#D8D8D8",
         "location_opacity": 0.88,
-        "bar_or_rail_weight": 0.028,
         "safe_ratio": 0.94,
         "top_margin": 0.030,
         "title_gap": 12,
         "show_top_plate": False,
-        "top_plate_opacity": 0.20,
+        "top_plate_opacity": 0.16,
         "show_text_shadow": True,
         "show_divider": False,
     },
     "Sony Royal": {
         "layout": "Bottom Bar",
-        "font_weight": "Thin",
+        "rail_font": "Rail Regular",
+        "title_font": "Title Thin",
         "location_tracking": 2,
         "exif_tracking": 0,
-        "exif_size": 0.018,
+        "rail_text_scale": 1.00,
+        "rail_width_ratio": 0.030,
+        "bar_text_scale": 0.020,
+        "bar_height_ratio": 0.050,
         "location_size": 34,
         "subtitle_size": 18,
         "metadata_text_color": "#9A9A9A",
@@ -100,7 +115,6 @@ PRESETS = {
         "location_text_color": "#FFFFFF",
         "subtitle_text_color": "#D5D5D5",
         "location_opacity": 0.90,
-        "bar_or_rail_weight": 0.045,
         "safe_ratio": 0.92,
         "top_margin": 0.025,
         "title_gap": 10,
@@ -109,40 +123,20 @@ PRESETS = {
         "show_text_shadow": True,
         "show_divider": False,
     },
-    "Cinematic Travel": {
-        "layout": "Left Rail",
-        "font_weight": "Thin",
-        "location_tracking": 2,
-        "exif_tracking": 0,
-        "exif_size": 0.017,
-        "location_size": 38,
-        "subtitle_size": 20,
-        "metadata_text_color": "#B5B5B5",
-        "metadata_bg_color": "#000000",
-        "location_text_color": "#FFFFFF",
-        "subtitle_text_color": "#E0E0E0",
-        "location_opacity": 0.86,
-        "bar_or_rail_weight": 0.030,
-        "safe_ratio": 0.94,
-        "top_margin": 0.028,
-        "title_gap": 12,
-        "show_top_plate": True,
-        "top_plate_opacity": 0.15,
-        "show_text_shadow": True,
-        "show_divider": True,
-    },
 }
 
 # ------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------
-def get_font(size: int, weight: str = "Regular"):
-    for path in FONT_CANDIDATES.get(weight, FONT_CANDIDATES["Regular"]):
+def get_font(size: int, font_key: str) -> ImageFont.FreeTypeFont:
+    path = FONT_FILES.get(font_key, FALLBACK_FONT)
+    try:
+        return ImageFont.truetype(path, size)
+    except Exception:
         try:
-            return ImageFont.truetype(path, size)
+            return ImageFont.truetype(FALLBACK_FONT, size)
         except Exception:
-            continue
-    return ImageFont.load_default()
+            return ImageFont.load_default()
 
 
 def ratio_to_float(v) -> Optional[float]:
@@ -246,9 +240,9 @@ def sanitize_filename_part(text: str) -> str:
     return text.lower()
 
 
-def build_export_filename(original_name: str, suffix: str = "exif") -> str:
+def build_export_filename(original_name: str, suffix: str = "exif-curated") -> str:
     base = os.path.splitext(original_name)[0]
-    suffix = sanitize_filename_part(suffix) or "exif"
+    suffix = sanitize_filename_part(suffix) or "exif-curated"
     return f"{base}_{suffix}.jpg"
 
 
@@ -363,91 +357,85 @@ def build_exif_text(selected_fields, values):
 
 
 # ------------------------------------------------------------
-# Fit text
+# Fit helpers
 # ------------------------------------------------------------
-def fit_text(draw, text, max_width, start_size, weight="Regular", min_size=8):
+def fit_text(draw, text, max_width, start_size, font_key, min_size=8):
     size = start_size
     while size >= min_size:
-        font = get_font(size, weight)
+        font = get_font(size, font_key)
         bbox = draw.textbbox((0, 0), text, font=font)
         width = bbox[2] - bbox[0]
         if width <= max_width:
             return font, bbox
         size -= 1
-    font = get_font(min_size, weight)
+    font = get_font(min_size, font_key)
     return font, draw.textbbox((0, 0), text, font=font)
 
 
 # ------------------------------------------------------------
 # Metadata renderers
 # ------------------------------------------------------------
-def render_bottom_bar(img, text, tracking, font_scale, bar_weight, text_color, bar_color, safe_ratio, weight):
+def render_bottom_bar(img, text, tracking, text_scale, bar_height_ratio, text_color, bar_color, safe_ratio, font_key):
     w, h = img.size
-    pad = int(h * bar_weight)
-    canvas = ImageOps.expand(img, border=(0, 0, 0, pad), fill=bar_color)
+    bar_h = max(24, int(h * bar_height_ratio))
+    canvas = ImageOps.expand(img, border=(0, 0, 0, bar_h), fill=bar_color)
     draw = ImageDraw.Draw(canvas)
 
     final_text = apply_tracking(text, tracking)
-    start_font_size = max(10, int(h * font_scale))
+    start_font_size = max(10, int(h * text_scale))
     safe_width = int(w * safe_ratio)
-    font, bbox = fit_text(draw, final_text, safe_width, start_font_size, weight=weight)
+    font, bbox = fit_text(draw, final_text, safe_width, start_font_size, font_key)
 
     t_w = bbox[2] - bbox[0]
     t_h = bbox[3] - bbox[1]
     x = (w - t_w) // 2
-    y = h + (pad // 2) - (t_h // 2)
+    y = h + (bar_h // 2) - (t_h // 2)
     draw.text((x, y), final_text, fill=text_color, font=font)
     return canvas
 
 
-def render_top_bar(img, text, tracking, font_scale, bar_weight, text_color, bar_color, safe_ratio, weight):
+def render_top_bar(img, text, tracking, text_scale, bar_height_ratio, text_color, bar_color, safe_ratio, font_key):
     w, h = img.size
-    pad = int(h * bar_weight)
-    canvas = ImageOps.expand(img, border=(0, pad, 0, 0), fill=bar_color)
+    bar_h = max(24, int(h * bar_height_ratio))
+    canvas = ImageOps.expand(img, border=(0, bar_h, 0, 0), fill=bar_color)
     draw = ImageDraw.Draw(canvas)
 
     final_text = apply_tracking(text, tracking)
-    start_font_size = max(10, int(h * font_scale))
+    start_font_size = max(10, int(h * text_scale))
     safe_width = int(w * safe_ratio)
-    font, bbox = fit_text(draw, final_text, safe_width, start_font_size, weight=weight)
+    font, bbox = fit_text(draw, final_text, safe_width, start_font_size, font_key)
 
     t_w = bbox[2] - bbox[0]
     t_h = bbox[3] - bbox[1]
     x = (w - t_w) // 2
-    y = (pad // 2) - (t_h // 2)
+    y = (bar_h // 2) - (t_h // 2)
     draw.text((x, y), final_text, fill=text_color, font=font)
     return canvas
 
 
-def render_left_rail(img, text, tracking, font_scale, rail_weight, text_color, rail_color, safe_ratio, weight):
+def render_left_rail(img, text, tracking, rail_width_ratio, rail_text_scale, text_color, rail_color, safe_ratio, font_key):
     img = img.convert("RGB")
     w, h = img.size
 
-    # Thin classy rail
-    rail_w = max(22, int(w * rail_weight))
+    rail_w = max(20, int(w * rail_width_ratio))
     canvas = ImageOps.expand(img, border=(rail_w, 0, 0, 0), fill=rail_color)
 
     final_text = apply_tracking(text, tracking)
 
-    # Start from rail width, not image height
-    # This keeps the rail thin while fitting text inside it cleanly
-    font_size = max(10, int(rail_w * 0.55))
-    font = get_font(font_size, weight)
-
     text_img = Image.new("RGBA", (h, rail_w), (0, 0, 0, 0))
     td = ImageDraw.Draw(text_img)
 
+    font_size = max(10, int(rail_w * rail_text_scale))
+    font = get_font(font_size, font_key)
+
     while font_size > 8:
-        font = get_font(font_size, weight)
+        font = get_font(font_size, font_key)
         bbox = td.textbbox((0, 0), final_text, font=font)
-        tw = bbox[2] - bbox[0]   # length along the rail after rotation
-        th = bbox[3] - bbox[1]   # thickness inside the rail
+        tw = bbox[2] - bbox[0]
+        th = bbox[3] - bbox[1]
 
-        # Condition 1: text length must fit the image height
         fits_length = tw <= int(h * safe_ratio)
-
-        # Condition 2: text thickness must fit inside the rail with padding
-        fits_thickness = th <= int(rail_w * 0.78)
+        fits_thickness = th <= int(rail_w * 0.80)
 
         if fits_length and fits_thickness:
             break
@@ -458,10 +446,8 @@ def render_left_rail(img, text, tracking, font_scale, rail_weight, text_color, r
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
 
-    # Center text nicely inside the thin rail
     tx = max(0, (h - tw) // 2)
     ty = max(0, (rail_w - th) // 2)
-
     td.text((tx, ty), final_text, fill=text_color, font=font)
 
     rotated = text_img.rotate(90, expand=True)
@@ -473,7 +459,7 @@ def render_left_rail(img, text, tracking, font_scale, rail_weight, text_color, r
 
 
 # ------------------------------------------------------------
-# Top title renderer
+# Top text renderer
 # ------------------------------------------------------------
 def render_top_text(
     canvas,
@@ -485,7 +471,7 @@ def render_top_text(
     subtitle_color,
     opacity,
     tracking,
-    weight,
+    title_font_key,
     margin_ratio,
     title_gap,
     show_top_plate,
@@ -507,8 +493,8 @@ def render_top_text(
     title = apply_tracking(safe_text(title_text), tracking) if safe_text(title_text) else ""
     subtitle = safe_text(subtitle_text)
 
-    title_font = get_font(title_size, weight)
-    subtitle_font = get_font(subtitle_size, "Regular")
+    title_font = get_font(title_size, title_font_key)
+    subtitle_font = get_font(subtitle_size, "Title Regular")
 
     title_bbox = draw.textbbox((0, 0), title, font=title_font) if title else (0, 0, 0, 0)
     title_w = title_bbox[2] - title_bbox[0]
@@ -599,8 +585,8 @@ def render_top_text(
 # ------------------------------------------------------------
 # UI
 # ------------------------------------------------------------
-st.title("Photo Metadata Overlay v1.2")
-st.caption("One upload, EXIF integrity check, live manual fallback, and reliable export rendering.")
+st.title("LensRail")
+st.caption("Two looks only: Leica Rail and Sony Royal.")
 
 uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"])
 
@@ -634,7 +620,7 @@ if uploaded_file:
         )
 
         st.header("4. Metadata Values")
-        st.caption("Manual values always work, even when EXIF is missing.")
+        st.caption("Manual values always work.")
         st.text_input("Camera", key="field_model")
         st.text_input("Lens", key="field_lens")
         st.text_input("Focal", key="field_focal")
@@ -651,14 +637,22 @@ if uploaded_file:
         st.text_input("Or custom subtitle", key="custom_subtitle")
 
         st.header("6. Typography")
-        font_weight = st.selectbox(
-            "Font style",
-            ["Thin", "Regular", "Medium"],
-            index=["Thin", "Regular", "Medium"].index(preset["font_weight"]),
+        rail_font_key = st.selectbox(
+            "Rail font",
+            ["Rail Thin", "Rail Regular"],
+            index=["Rail Thin", "Rail Regular"].index(preset["rail_font"]),
+        )
+        title_font_key = st.selectbox(
+            "Title font",
+            ["Title Thin", "Title Regular"],
+            index=["Title Thin", "Title Regular"].index(preset["title_font"]),
         )
         location_tracking = st.slider("Location letter spacing", 0, 4, preset["location_tracking"])
         exif_tracking = st.slider("Metadata letter spacing", 0, 2, preset["exif_tracking"])
-        exif_size = st.slider("Metadata size", 0.008, 0.045, preset["exif_size"], 0.001)
+        rail_text_scale = st.slider("Rail text size", 0.50, 2.20, preset["rail_text_scale"], 0.05)
+        rail_width_ratio = st.slider("Rail thickness", 0.018, 0.060, preset["rail_width_ratio"], 0.002)
+        bar_text_scale = st.slider("Bar text size", 0.010, 0.040, preset["bar_text_scale"], 0.001)
+        bar_height_ratio = st.slider("Bar height", 0.028, 0.080, preset["bar_height_ratio"], 0.002)
         location_size = st.slider("Location title size", 14, 100, preset["location_size"])
         subtitle_size = st.slider("Subtitle size", 10, 80, preset["subtitle_size"])
         title_gap = st.slider("Gap between title and subtitle", 4, 40, preset["title_gap"])
@@ -677,7 +671,6 @@ if uploaded_file:
         show_divider = st.toggle("Thin divider line", value=preset["show_divider"])
 
         st.header("9. Spacing")
-        bar_or_rail_weight = st.slider("Rail / bar weight", 0.018, 0.060, preset["bar_or_rail_weight"], 0.002)
         safe_ratio = st.slider("Text safe width", 0.70, 0.98, preset["safe_ratio"], 0.01)
         top_margin = st.slider("Top margin", 0.01, 0.08, preset["top_margin"], 0.005)
 
@@ -702,21 +695,39 @@ if uploaded_file:
 
     if layout == "Left Rail":
         output = render_left_rail(
-            img, exif_text, exif_tracking, exif_size,
-            bar_or_rail_weight, metadata_text_color, metadata_bg_color,
-            safe_ratio, font_weight
+            img,
+            exif_text,
+            exif_tracking,
+            rail_width_ratio,
+            rail_text_scale,
+            metadata_text_color,
+            metadata_bg_color,
+            safe_ratio,
+            rail_font_key,
         )
     elif layout == "Bottom Bar":
         output = render_bottom_bar(
-            img, exif_text, exif_tracking, exif_size,
-            bar_or_rail_weight, metadata_text_color, metadata_bg_color,
-            safe_ratio, font_weight
+            img,
+            exif_text,
+            exif_tracking,
+            bar_text_scale,
+            bar_height_ratio,
+            metadata_text_color,
+            metadata_bg_color,
+            safe_ratio,
+            rail_font_key,
         )
     else:
         output = render_top_bar(
-            img, exif_text, exif_tracking, exif_size,
-            bar_or_rail_weight, metadata_text_color, metadata_bg_color,
-            safe_ratio, font_weight
+            img,
+            exif_text,
+            exif_tracking,
+            bar_text_scale,
+            bar_height_ratio,
+            metadata_text_color,
+            metadata_bg_color,
+            safe_ratio,
+            rail_font_key,
         )
 
     output = render_top_text(
@@ -729,7 +740,7 @@ if uploaded_file:
         subtitle_text_color,
         location_opacity,
         location_tracking,
-        font_weight,
+        title_font_key,
         top_margin,
         title_gap,
         show_top_plate,
@@ -745,15 +756,8 @@ if uploaded_file:
         st.image(output, use_container_width=True)
 
     with right:
-        if exif_status == "FULL":
-            st.markdown('<div class="info-box"><b>EXIF Integrity</b><br>FULL — most useful metadata is present.</div>', unsafe_allow_html=True)
-        elif exif_status == "PARTIAL":
-            st.markdown('<div class="info-box"><b>EXIF Integrity</b><br>PARTIAL — some metadata exists, but part may be stripped.</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="info-box"><b>EXIF Integrity</b><br>STRIPPED — very little usable metadata was found.</div>', unsafe_allow_html=True)
-
         st.markdown(
-            f'<div class="info-box"><b>Font source</b><br>{" / ".join(FONT_CANDIDATES[font_weight])}</div>',
+            f'<div class="info-box"><b>EXIF Integrity</b><br>{exif_status}</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
