@@ -68,7 +68,7 @@ FIELD_LABELS = {
     "gps": "GPS Coordinates",
 }
 
-DEFAULT_FIELDS = ["model", "focal", "fstop", "shutter", "iso"]
+DEFAULT_FIELDS = ["model", "focal", "fstop", "iso"]
 
 PRESETS = {
     "Leica Minimal": {
@@ -76,7 +76,7 @@ PRESETS = {
         "font_weight": "Thin",
         "location_tracking": 1,
         "exif_tracking": 0,
-        "exif_size": 0.018,
+        "exif_size": 0.016,
         "location_size": 42,
         "subtitle_size": 22,
         "metadata_text_color": "#B0B0B0",
@@ -84,8 +84,8 @@ PRESETS = {
         "location_text_color": "#F7F7F7",
         "subtitle_text_color": "#D8D8D8",
         "location_opacity": 0.88,
-        "bar_or_rail_weight": 0.060,
-        "safe_ratio": 0.90,
+        "bar_or_rail_weight": 0.028,
+        "safe_ratio": 0.94,
         "top_margin": 0.030,
         "title_gap": 12,
         "show_top_plate": False,
@@ -98,7 +98,7 @@ PRESETS = {
         "font_weight": "Thin",
         "location_tracking": 2,
         "exif_tracking": 0,
-        "exif_size": 0.020,
+        "exif_size": 0.018,
         "location_size": 34,
         "subtitle_size": 18,
         "metadata_text_color": "#9A9A9A",
@@ -106,8 +106,8 @@ PRESETS = {
         "location_text_color": "#FFFFFF",
         "subtitle_text_color": "#D5D5D5",
         "location_opacity": 0.90,
-        "bar_or_rail_weight": 0.050,
-        "safe_ratio": 0.90,
+        "bar_or_rail_weight": 0.045,
+        "safe_ratio": 0.92,
         "top_margin": 0.025,
         "title_gap": 10,
         "show_top_plate": True,
@@ -120,7 +120,7 @@ PRESETS = {
         "font_weight": "Thin",
         "location_tracking": 2,
         "exif_tracking": 0,
-        "exif_size": 0.019,
+        "exif_size": 0.017,
         "location_size": 38,
         "subtitle_size": 20,
         "metadata_text_color": "#B5B5B5",
@@ -128,8 +128,8 @@ PRESETS = {
         "location_text_color": "#FFFFFF",
         "subtitle_text_color": "#E0E0E0",
         "location_opacity": 0.86,
-        "bar_or_rail_weight": 0.065,
-        "safe_ratio": 0.90,
+        "bar_or_rail_weight": 0.030,
+        "safe_ratio": 0.94,
         "top_margin": 0.028,
         "title_gap": 12,
         "show_top_plate": True,
@@ -429,41 +429,52 @@ def render_left_rail(img, text, tracking, font_scale, rail_weight, text_color, r
     img = img.convert("RGB")
     w, h = img.size
 
-    aspect_ratio = h / max(w, 1)
-    adaptive_rail_weight = rail_weight
-    if aspect_ratio > 1.2:
-        adaptive_rail_weight = max(rail_weight, 0.07)
-    if aspect_ratio > 1.6:
-        adaptive_rail_weight = max(adaptive_rail_weight, 0.085)
-
-    rail_w = int(w * adaptive_rail_weight)
+    # Thin classy rail
+    rail_w = max(22, int(w * rail_weight))
     canvas = ImageOps.expand(img, border=(rail_w, 0, 0, 0), fill=rail_color)
 
     final_text = apply_tracking(text, tracking)
 
-    font_size = max(12, int(h * font_scale * 1.45))
+    # Start from rail width, not image height
+    # This keeps the rail thin while fitting text inside it cleanly
+    font_size = max(10, int(rail_w * 0.55))
     font = get_font(font_size, weight)
 
     text_img = Image.new("RGBA", (h, rail_w), (0, 0, 0, 0))
     td = ImageDraw.Draw(text_img)
-    bbox = td.textbbox((0, 0), final_text, font=font)
-    tw = bbox[2] - bbox[0]
 
-    while tw > int(h * safe_ratio) and font_size > 8:
-        font_size -= 1
+    while font_size > 8:
         font = get_font(font_size, weight)
         bbox = td.textbbox((0, 0), final_text, font=font)
-        tw = bbox[2] - bbox[0]
+        tw = bbox[2] - bbox[0]   # length along the rail after rotation
+        th = bbox[3] - bbox[1]   # thickness inside the rail
 
+        # Condition 1: text length must fit the image height
+        fits_length = tw <= int(h * safe_ratio)
+
+        # Condition 2: text thickness must fit inside the rail with padding
+        fits_thickness = th <= int(rail_w * 0.78)
+
+        if fits_length and fits_thickness:
+            break
+
+        font_size -= 1
+
+    bbox = td.textbbox((0, 0), final_text, font=font)
+    tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
+
+    # Center text nicely inside the thin rail
     tx = max(0, (h - tw) // 2)
     ty = max(0, (rail_w - th) // 2)
+
     td.text((tx, ty), final_text, fill=text_color, font=font)
 
     rotated = text_img.rotate(90, expand=True)
     px = 0
     py = (canvas.size[1] - rotated.size[1]) // 2
     canvas.paste(rotated, (px, py), rotated)
+
     return canvas
 
 
@@ -594,7 +605,7 @@ def render_top_text(
 # ------------------------------------------------------------
 # UI
 # ------------------------------------------------------------
-st.title("Photo Metadata Overlay v1")
+st.title("Photo Metadata Overlay v1.2")
 st.caption("One upload, EXIF integrity check, live manual fallback, and reliable export rendering.")
 
 uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"])
@@ -672,7 +683,7 @@ if uploaded_file:
         show_divider = st.toggle("Thin divider line", value=preset["show_divider"])
 
         st.header("9. Spacing")
-        bar_or_rail_weight = st.slider("Rail / bar weight", 0.03, 0.12, preset["bar_or_rail_weight"], 0.005)
+        bar_or_rail_weight = st.slider("Rail / bar weight", 0.018, 0.060, preset["bar_or_rail_weight"], 0.002)
         safe_ratio = st.slider("Text safe width", 0.70, 0.98, preset["safe_ratio"], 0.01)
         top_margin = st.slider("Top margin", 0.01, 0.08, preset["top_margin"], 0.005)
 
