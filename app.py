@@ -252,9 +252,9 @@ def sanitize_filename_part(text: str) -> str:
     return text.lower()
 
 
-def build_export_filename(original_name: str, suffix: str = "exif-curated") -> str:
+def build_export_filename(original_name: str, suffix: str = "exif") -> str:
     base = os.path.splitext(original_name)[0]
-    suffix = sanitize_filename_part(suffix) or "exif-curated"
+    suffix = sanitize_filename_part(suffix) or "exif"
     return f"{base}_{suffix}.jpg"
 
 
@@ -594,7 +594,7 @@ def render_top_text(
 # ------------------------------------------------------------
 # UI
 # ------------------------------------------------------------
-st.title("α MASTER CURATOR v1.2")
+st.title("Photo Metadata Overlay v1")
 st.caption("One upload, EXIF integrity check, live manual fallback, and reliable export rendering.")
 
 uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "webp"])
