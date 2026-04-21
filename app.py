@@ -7,7 +7,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
 
-st.set_page_config(page_title="LensRail — Photo Metadata Overlay", layout="wide")
+st.set_page_config(page_title="Exif Studio — Photo Metadata Overlay", layout="wide")
 
 st.markdown(
     """
@@ -633,8 +633,14 @@ if uploaded_file:
         st.header("5. Top Text")
         st.text_input("Title", key="top_location")
         top_text_position = st.selectbox("Title position", ["Top Center", "Top Left", "Top Right"], index=0)
-        st.toggle("Use GPS as subtitle", key="show_gps_subtitle")
-        st.text_input("Or custom subtitle", key="custom_subtitle")
+
+        top_text_mode = st.selectbox(
+            "Top text style",
+            ["Title Only", "Title + Coordinates", "Title + Custom Subtitle", "Coordinates Only", "None"],
+            index=0,
+        )
+
+        st.text_input("Custom subtitle", key="custom_subtitle")
 
         st.header("6. Typography")
         rail_font_key = st.selectbox(
@@ -685,11 +691,29 @@ if uploaded_file:
         "gps": safe_text(st.session_state.get("field_gps", "")),
     }
 
-    final_subtitle = (
-        safe_text(st.session_state.get("custom_subtitle", ""))
-        if safe_text(st.session_state.get("custom_subtitle", ""))
-        else (values["gps"] if st.session_state.get("show_gps_subtitle", False) else "")
-    )
+    top_title = safe_text(st.session_state.get("top_location", ""))
+    gps_text = values["gps"]
+    custom_subtitle = safe_text(st.session_state.get("custom_subtitle", ""))
+
+    if top_text_mode == "Title Only":
+        render_title = top_title
+        final_subtitle = ""
+
+    elif top_text_mode == "Title + Coordinates":
+        render_title = top_title
+        final_subtitle = gps_text
+
+    elif top_text_mode == "Title + Custom Subtitle":
+        render_title = top_title
+        final_subtitle = custom_subtitle
+
+    elif top_text_mode == "Coordinates Only":
+        render_title = ""
+        final_subtitle = gps_text
+
+    else:  # None
+        render_title = ""
+        final_subtitle = ""
 
     exif_text = build_exif_text(exif_fields, values)
 
@@ -732,7 +756,7 @@ if uploaded_file:
 
     output = render_top_text(
         output,
-        st.session_state.get("top_location", ""),
+        render_title,
         final_subtitle,
         location_size,
         subtitle_size,
@@ -769,7 +793,7 @@ if uploaded_file:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f'<div class="info-box"><b>Top title</b><br>{safe_text(st.session_state.get("top_location", "")) or "Not set"}</div>',
+            f'<div class="info-box"><b>Top title</b><br>{render_title if render_title else "Not set"}</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
